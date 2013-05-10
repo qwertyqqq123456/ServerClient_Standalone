@@ -131,9 +131,10 @@ if __name__ == "__main__":
             msg = "D#{0}#Reply##".format(randnumber_2)
         
         (threading.Thread(target=client, args=(ip, port, msg))).start()
-       
-    """server.shutdown()
-    print "Server shutdown." """
+    
+    time.sleep(30)   
+    server.shutdown()
+    print "Server shutdown." 
 
 """import sys
 
