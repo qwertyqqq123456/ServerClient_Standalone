@@ -2,6 +2,7 @@ import socket
 import threading
 import SocketServer
 import time
+import sys
 from random import randrange
 
 devicelist = {}
@@ -84,6 +85,7 @@ def client(ip, port, message):
     randtime = randrange(0, 7)
     time.sleep(randtime)
     'This function is for executing client logic'
+    
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((ip, port))
     try:
@@ -107,7 +109,7 @@ if __name__ == "__main__":
     print "Loop...server thread name: ", server_thread.name
     print "\n"
 
-    totalnumber = 10
+    totalnumber = 100
     times = 20
     
     for i in range(1, (totalnumber / 2) + 1):
@@ -130,8 +132,15 @@ if __name__ == "__main__":
         
         (threading.Thread(target=client, args=(ip, port, msg))).start()
        
-    """erver.shutdown()
+    """server.shutdown()
     print "Server shutdown." """
+
+"""import sys
+
+dic = {}    
+for n in range(60000):
+    dic[str(n) * 6] = range(110)
+print sys.getsizeof(dic)"""
     
 
 
