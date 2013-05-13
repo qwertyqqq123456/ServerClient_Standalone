@@ -10,10 +10,14 @@ from random import randrange
 devlist_pairinfo = 0
 devlist_connected = 1
 devlist_isalive = 2
-devlist_queue = 3
+devlist_timer = 3
+devlist_queue = 4
+
+TTL = 40.0
 
 devicelist = {}
 devicenumber_index = {}
+indexlock = threading.Lock()
 
 class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
     'This handler is for handling request on server'
@@ -27,23 +31,30 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
             pairing_info = paralist[2]
             connected = False
             isalive = True
-            devicelist[device_name] = [pairing_info, connected, isalive]
             
-            devicenumber = len(devicenumber_index) + 1
-            devicenumber_index[devicenumber] = device_name
-            
-            if pairing_info in devicelist:
-                if devicelist[pairing_info][devlist_pairinfo] == device_name:
-                    devicelist[pairing_info][devlist_connected] = True
-                    devicelist[device_name][devlist_connected] = True
-                    devicelist[pairing_info].append(Queue.Queue(5))
-                    devicelist[device_name].append(Queue.Queue(5))
-                else:
-                    print "Some error in devicelist: [name mismatching]"
+            if device_name not in devicelist:
+                devicelist[device_name] = [pairing_info, connected, isalive, threading.Timer(TTL, client_die, args=[device_name])]
+                devicelist[device_name][devlist_timer].start() 
                 
-            # print"Current devlist:", devicelist
-            # print"Current devicenumber_index:", devicenumber_index
-            response = "{0} registered as {1}" .format(device_name, devicenumber)
+                indexlock.acquire()
+                devicenumber = len(devicenumber_index) + 1
+                devicenumber_index[devicenumber] = device_name
+                indexlock.release()
+                
+                if pairing_info in devicelist:
+                    if devicelist[pairing_info][devlist_pairinfo] == device_name:
+                        devicelist[pairing_info][devlist_connected] = True
+                        devicelist[device_name][devlist_connected] = True
+                        devicelist[pairing_info].append(Queue.Queue(5))
+                        devicelist[device_name].append(Queue.Queue(5))
+                    else:
+                        print "Some error in devicelist: [name mismatching]"
+                    
+                # print"Current devlist:", devicelist
+                # print"Current devicenumber_index:", devicenumber_index
+                response = "{0} registered as {1}" .format(device_name, devicenumber)
+            else:
+                response = "{0} has already been registered.".format(device_name)
         
         elif paralist[0] == "D":
             sender_number = int(paralist[1])
@@ -56,47 +67,61 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
                 sender_name = devicenumber_index[sender_number]
 
                 if sender_name in devicelist:
-                    if devicelist[sender_name][devlist_connected] == True \
-                    and devicelist[devicelist[sender_name][devlist_pairinfo]][devlist_connected] == True:
                     
-                        'Send msg'
-                        if code == "Send":
-                            operation = "Send " + color + " " + brightness
-                        elif code == "Reply":
-                            operation = "Reply"
-                        else:
-                            print "error code"
-                            
-                        """if len(devicelist[devicelist[sender_name][devlist_pairinfo]]) == 3:
-                            devicelist[devicelist[sender_name][devlist_pairinfo]].append(operation)
-                        elif len(devicelist[devicelist[sender_name][devlist_pairinfo]]) == 4:
-                            devicelist[devicelist[sender_name][devlist_pairinfo]][3] = operation
-                        else:
-                            print "device record length error" """
+                    handle_alivesignal(sender_name)
+                    
+                    'Response'    
+                    try:
+                        response = devicelist[sender_name][devlist_queue].get(False)
+                        devicelist[sender_name][devlist_queue].task_done()
+                    except Queue.Empty:
+                        response = "No message this time"
+                                
+                    response = sender_name + ": " + response
+                    
+                    if devicelist[sender_name][devlist_pairinfo] in devicelist:
+                    
+                        if devicelist[sender_name][devlist_connected] == True \
+                        and devicelist[devicelist[sender_name][devlist_pairinfo]][devlist_connected] == True:
                         
-                        # print"operation:", operation
-                        
-                        try:
-                            devicelist[devicelist[sender_name][devlist_pairinfo]][devlist_queue].put(operation)
-                        except Queue.Full:
-                            print "The queue is full, try again later"
+                            'Send msg'
+                            if code == "Send":
+                                operation = "Send " + color + " " + brightness
+                            elif code == "Reply":
+                                operation = "Reply"
+                            else:
+                                print "error code"                                                          
+                            # print"operation:", operation
                             
-                        'Response'    
-                        """if len(devicelist[sender_name]) == 3:
-                            response = "no message this time"
-                        elif len(devicelist[sender_name]) == 4:
-                            response = devicelist[sender_name][3]
+                            try:
+                                devicelist[devicelist[sender_name][devlist_pairinfo]][devlist_queue].put(operation, False)
+                            except Queue.Full:
+                                print "The queue is full, try again later"
+                                
                         else:
-                            print "device record length error2" """
-                        if devicelist[sender_name][devlist_queue].empty():
-                            response = "queue is empty"
-                        else:
-                            response = devicelist[sender_name][devlist_queue].get()
-                            devicelist[sender_name][devlist_queue].task_done()
-                            
-                        response = sender_name + ": " + response
+                            response += "\nWarning: This device is not connected."
                     else:
-                        response = "Error: This device is not connected."
+                        response += "\nWarning: The pair information is not recorded."
+                else:
+                    response = "Error: This email appears in index list but not the devicelist."               
+            else:
+                response = "Error: Didn't find this device number in system!"
+        elif paralist[0] == "N":
+            sender_number = int(paralist[1])
+            if sender_number in devicenumber_index:
+                sender_name = devicenumber_index[sender_number]
+
+                if sender_name in devicelist:                  
+                    handle_alivesignal(sender_name)
+                    
+                    'Response'    
+                    try:
+                        response = devicelist[sender_name][devlist_queue].get(False)
+                        devicelist[sender_name][devlist_queue].task_done()
+                    except Queue.Empty:
+                        response = "No message this time"
+                                
+                    response = sender_name + ": " + response                   
                 else:
                     response = "Error: This email appears in index list but not the devicelist."               
             else:
@@ -109,6 +134,31 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
 class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
     'This is Threaded TCP Server'
     pass
+
+def handle_alivesignal(devicename):
+    if devicelist[devicename][devlist_isalive] == True:
+        devicelist[devicename][devlist_timer].interval = TTL
+    else:
+        devicelist[devicename][devlist_isalive] = True
+        if devicelist[devicename][devlist_pairinfo] in devicelist:
+            if devicelist[devicelist[devicename][devlist_pairinfo]][devlist_isalive] == True:
+                devicelist[devicename][devlist_connected] = True
+                devicelist[devicelist[devicename][devlist_pairinfo]][devlist_connected] = True
+            else:
+                print "Cannot reconnect: the pair device is dead."
+        else:
+            print "Cannot reconnect: the pair info is not recorded."
+
+def client_die(devicename):
+    'Performing operations when the server thinks this device is dead'
+       
+    if devicelist[devicename][devlist_pairinfo] in devicelist:
+        devicelist[devicename][devlist_connected] = False
+        devicelist[devicelist[devicename][devlist_pairinfo]][devlist_connected] = False
+    else:
+        print "Warning: missing the pair information, cannot make it disconnected, die alone"
+    devicelist[devicename][devlist_isalive] = False
+    # May include another timer to indicate when to clear the long-dead device record
 
 def client(ip, port, message):
     randtime = randrange(0, 7)
@@ -139,7 +189,7 @@ if __name__ == "__main__":
     print "\n"
 
     totalnumber = 100
-    times = 20
+    times = 100
     
     for i in range(1, (totalnumber / 2) + 1):
         reg_message = "R#Client{0}#Client{1}".format(i, (i + totalnumber / 2))
@@ -161,7 +211,7 @@ if __name__ == "__main__":
         
         (threading.Thread(target=client, args=(ip, port, msg))).start()
     
-    time.sleep(30)   
+    time.sleep(60)   
     server.shutdown()
     print "Server shutdown." 
 
