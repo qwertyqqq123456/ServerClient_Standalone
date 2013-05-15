@@ -3,7 +3,6 @@ import threading
 import SocketServer
 import time
 import Queue
-import sys
 from random import randrange
 
 
@@ -155,6 +154,11 @@ def client_die(devicename):
     if devicelist[devicename][devlist_pairinfo] in devicelist:
         devicelist[devicename][devlist_connected] = False
         devicelist[devicelist[devicename][devlist_pairinfo]][devlist_connected] = False
+        try:
+            devicelist[devicename][devlist_queue].clear()
+            devicelist[devicelist[devicename][devlist_pairinfo]][devlist_queue].clear()
+        except Queue.Empty:
+            print "This queue is already empty, no need to clear."
     else:
         print "Warning: missing the pair information, cannot make it disconnected, die alone"
     devicelist[devicename][devlist_isalive] = False
@@ -176,7 +180,7 @@ def client(ip, port, message):
 
 if __name__ == "__main__":
     
-    HOST, PORT = "localhost", 0
+    HOST, PORT = "localhost", 36666
     
     server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
     ip, port = server.server_address
@@ -216,6 +220,11 @@ if __name__ == "__main__":
     print "Server shutdown." 
 
 """import sys
+import struct
+
+result = struct.pack('!h', 77)
+print result + "|" + str(sys.getsizeof(result))
+
 
 dic = {}    
 for n in range(60000):
