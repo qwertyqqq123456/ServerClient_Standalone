@@ -10,7 +10,8 @@ devlist_pairinfo = 0
 devlist_connected = 1
 devlist_isalive = 2
 devlist_timer = 3
-devlist_queue = 4
+devlist_lock = 4
+devlist_queue = 5
 
 TTL = 40.0
 
@@ -32,7 +33,7 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
             isalive = True
             
             if device_name not in devicelist:
-                devicelist[device_name] = [pairing_info, connected, isalive, threading.Timer(TTL, client_die, args=[device_name])]
+                devicelist[device_name] = [pairing_info, connected, isalive, threading.Timer(TTL, client_die, args=[device_name]), threading.Lock()]
                 
                 try:
                     devicelist[device_name][devlist_timer].start() 
@@ -140,7 +141,13 @@ class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
 
 def handle_alivesignal(devicename):
     if devicelist[devicename][devlist_isalive] == True:
-        devicelist[devicename][devlist_timer].interval = TTL
+        
+        devicelist[devicename][devlist_lock].acquire()
+        devicelist[devicename][devlist_timer].cancel()
+        devicelist[devicename][devlist_timer] = threading.Timer(TTL, client_die, args=[devicename])        
+        devicelist[devicename][devlist_timer].start() 
+        devicelist[devicename][devlist_lock].release()
+        
     else:
         devicelist[devicename][devlist_isalive] = True
         if devicelist[devicename][devlist_pairinfo] in devicelist:
