@@ -33,7 +33,11 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
             
             if device_name not in devicelist:
                 devicelist[device_name] = [pairing_info, connected, isalive, threading.Timer(TTL, client_die, args=[device_name])]
-                devicelist[device_name][devlist_timer].start() 
+                
+                try:
+                    devicelist[device_name][devlist_timer].start() 
+                except RuntimeError as e:
+                    print str(e)
                 
                 indexlock.acquire()
                 devicenumber = len(devicenumber_index) + 1
