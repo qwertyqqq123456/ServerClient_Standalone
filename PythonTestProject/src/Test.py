@@ -47,10 +47,17 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
                 
                 if pairing_info in devicelist:
                     if devicelist[pairing_info][devlist_pairinfo] == device_name:
+                        
+                        devicelist[pairing_info][devlist_lock].acquire()
                         devicelist[pairing_info][devlist_connected] = True
-                        devicelist[device_name][devlist_connected] = True
                         devicelist[pairing_info].append(Queue.Queue(5))
+                        devicelist[pairing_info][devlist_lock].release()
+                        
+                        devicelist[device_name][devlist_lock].acquire()
+                        devicelist[device_name][devlist_connected] = True
                         devicelist[device_name].append(Queue.Queue(5))
+                        devicelist[device_name][devlist_lock].release()
+                        
                     else:
                         print "Some error in devicelist: [name mismatching]"
                     
@@ -140,14 +147,13 @@ class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
     pass
 
 def handle_alivesignal(devicename):
+    'This function handles the alive signal sent by clients.'
+    
+    devicelist[devicename][devlist_lock].acquire()
     if devicelist[devicename][devlist_isalive] == True:
-        
-        devicelist[devicename][devlist_lock].acquire()
         devicelist[devicename][devlist_timer].cancel()
         devicelist[devicename][devlist_timer] = threading.Timer(TTL, client_die, args=[devicename])        
-        devicelist[devicename][devlist_timer].start() 
-        devicelist[devicename][devlist_lock].release()
-        
+        devicelist[devicename][devlist_timer].start()        
     else:
         devicelist[devicename][devlist_isalive] = True
         if devicelist[devicename][devlist_pairinfo] in devicelist:
@@ -158,10 +164,12 @@ def handle_alivesignal(devicename):
                 print "Cannot reconnect: the pair device is dead."
         else:
             print "Cannot reconnect: the pair info is not recorded."
+    devicelist[devicename][devlist_lock].release()
 
 def client_die(devicename):
     'Performing operations when the server thinks this device is dead'
-       
+    
+    devicelist[devicename][devlist_lock].acquire()   
     if devicelist[devicename][devlist_pairinfo] in devicelist:
         devicelist[devicename][devlist_connected] = False
         devicelist[devicelist[devicename][devlist_pairinfo]][devlist_connected] = False
@@ -173,10 +181,11 @@ def client_die(devicename):
     else:
         print "Warning: missing the pair information, cannot make it disconnected, die alone"
     devicelist[devicename][devlist_isalive] = False
+    devicelist[devicename][devlist_lock].release()
     # May include another timer to indicate when to clear the long-dead device record
 
 def client(ip, port, message):
-    randtime = randrange(0, 7)
+    randtime = randrange(0, 15)
     time.sleep(randtime)
     'This function is for executing client logic'
     
@@ -203,8 +212,8 @@ if __name__ == "__main__":
     print "Loop...server thread name: ", server_thread.name
     print "\n"
 
-    totalnumber = 100
-    times = 100
+    totalnumber = 1000
+    times = 2000
     
     for i in range(1, (totalnumber / 2) + 1):
         reg_message = "R#Client{0}#Client{1}".format(i, (i + totalnumber / 2))
@@ -214,7 +223,7 @@ if __name__ == "__main__":
         (threading.Thread(target=client, args=(ip, port, reg_message))).start()
 
     print "Waiting for registration to be completed...\n"
-    time.sleep(30)
+    time.sleep(40)
     
     for j in range(times):
         randnumber_1 = randrange(1, totalnumber + 101)
@@ -226,7 +235,7 @@ if __name__ == "__main__":
         
         (threading.Thread(target=client, args=(ip, port, msg))).start()
     
-    time.sleep(60)   
+    time.sleep(70)   
     server.shutdown()
     print "Server shutdown." 
 
