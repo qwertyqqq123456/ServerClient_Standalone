@@ -212,8 +212,8 @@ if __name__ == "__main__":
     print "Loop...server thread name: ", server_thread.name
     print "\n"
 
-    totalnumber = 1000
-    times = 2000
+    totalnumber = 5000
+    times = 4000
     
     for i in range(1, (totalnumber / 2) + 1):
         reg_message = "R#Client{0}#Client{1}".format(i, (i + totalnumber / 2))
@@ -235,7 +235,7 @@ if __name__ == "__main__":
         
         (threading.Thread(target=client, args=(ip, port, msg))).start()
     
-    time.sleep(70)   
+    time.sleep(80)   
     server.shutdown()
     print "Server shutdown." 
 
