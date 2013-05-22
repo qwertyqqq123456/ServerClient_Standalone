@@ -9,21 +9,29 @@ from random import randrange
 devlist_pairinfo = 0
 devlist_connected = 1
 devlist_isalive = 2
-devlist_timer = 3
-devlist_lock = 4
-devlist_queue = 5
-
-TTL = 40.0
+devlist_lock = 3
+devlist_queue = 4
 
 devicelist = {}
 devicenumber_index = {}
 indexlock = threading.Lock()
 
 class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
-    'This handler is for handling request on server'
+    'This handler is for handling and processing requests on server'
+    
     def handle(self):
-        'This function handles the processing of the requests'
-        data = self.request.recv(1024)
+        'This function handles the incoming requests'
+        try:
+            while():
+                mdata = self.request.recv(1024)
+                d_name, mresponse = self.processing(mdata)
+                self.request.sendall(mresponse)          
+        except socket.error as e:
+            self.request.close()
+            client_die(d_name)
+        
+    def processing(self, data):
+        'This function processes the request'
         paralist = data.split("#")
         
         if paralist[0] == "R":          
@@ -33,12 +41,7 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
             isalive = True
             
             if device_name not in devicelist:
-                devicelist[device_name] = [pairing_info, connected, isalive, threading.Timer(TTL, client_die, args=[device_name]), threading.Lock()]
-                
-                try:
-                    devicelist[device_name][devlist_timer].start() 
-                except RuntimeError as e:
-                    print str(e)
+                devicelist[device_name] = [pairing_info, connected, isalive, threading.Lock()]
                 
                 indexlock.acquire()
                 devicenumber = len(devicenumber_index) + 1
@@ -61,11 +64,11 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
                     else:
                         print "Some error in devicelist: [name mismatching]"
                     
-                # print"Current devlist:", devicelist
-                # print"Current devicenumber_index:", devicenumber_index
                 response = "{0} registered as {1}" .format(device_name, devicenumber)
             else:
                 response = "{0} has already been registered.".format(device_name)
+            
+            return (device_name, response)    
         
         elif paralist[0] == "D":
             sender_number = int(paralist[1])
@@ -78,9 +81,7 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
                 sender_name = devicenumber_index[sender_number]
 
                 if sender_name in devicelist:
-                    
-                    handle_alivesignal(sender_name)
-                    
+
                     'Response'    
                     try:
                         response = devicelist[sender_name][devlist_queue].get(False)
@@ -117,13 +118,14 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
                     response = "Error: This email appears in index list but not the devicelist."               
             else:
                 response = "Error: Didn't find this device number in system!"
+        
         elif paralist[0] == "N":
             sender_number = int(paralist[1])
             if sender_number in devicenumber_index:
                 sender_name = devicenumber_index[sender_number]
 
                 if sender_name in devicelist:                  
-                    handle_alivesignal(sender_name)
+                    # handle_alivesignal(sender_name)
                     
                     'Response'    
                     try:
@@ -138,15 +140,14 @@ class ThreadedTCPRequestHandler(SocketServer.BaseRequestHandler):
             else:
                 response = "Error: Didn't find this device number in system!"
         else:
-            pass          
-        
-        self.request.sendall(response)
+            response = ""              
+    
         
 class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
     'This is Threaded TCP Server'
     pass
 
-def handle_alivesignal(devicename):
+"""def handle_alivesignal(devicename):
     'This function handles the alive signal sent by clients.'
     
     devicelist[devicename][devlist_lock].acquire()
@@ -164,7 +165,7 @@ def handle_alivesignal(devicename):
                 print "Cannot reconnect: the pair device is dead."
         else:
             print "Cannot reconnect: the pair info is not recorded."
-    devicelist[devicename][devlist_lock].release()
+    devicelist[devicename][devlist_lock].release()"""
 
 def client_die(devicename):
     'Performing operations when the server thinks this device is dead'
@@ -184,19 +185,33 @@ def client_die(devicename):
     devicelist[devicename][devlist_lock].release()
     # May include another timer to indicate when to clear the long-dead device record
 
-def client(ip, port, message):
-    randtime = randrange(0, 15)
-    time.sleep(randtime)
-    'This function is for executing client logic'
+class client:
+    'This class is for executing client logic'
     
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip, port))
-    try:
-        sock.sendall(message)
-        response = sock.recv(1024)
-        print"Received: {}".format(response)
-    finally:
-        sock.close()
+    def __init__(self, ip, port):
+        self.__response = None
+        self.__ip = ip
+        self.__port = port
+        self.__sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try: 
+            self.__sock.connect((self.__ip, self.__port))
+        except socket.error:
+            time.sleep(1)
+            self.__sock.connect((self.__ip, self.__port))
+            
+    def send_recv(self, message):
+        self.__sock.sendall(message)
+        try:
+            self.__response = self.__sock.recv(1024)
+        except socket.error:
+            time.sleep(2)
+            self.__response = self.__sock.recv(1024)
+        return self.__response
+    
+    def client_down(self):
+        self.__sock.close()
+
+
 
 if __name__ == "__main__":
     
@@ -212,8 +227,8 @@ if __name__ == "__main__":
     print "Loop...server thread name: ", server_thread.name
     print "\n"
 
-    totalnumber = 5000
-    times = 4000
+    totalnumber = 100
+    times = 100
     
     for i in range(1, (totalnumber / 2) + 1):
         reg_message = "R#Client{0}#Client{1}".format(i, (i + totalnumber / 2))
@@ -223,7 +238,7 @@ if __name__ == "__main__":
         (threading.Thread(target=client, args=(ip, port, reg_message))).start()
 
     print "Waiting for registration to be completed...\n"
-    time.sleep(40)
+    time.sleep(20)
     
     for j in range(times):
         randnumber_1 = randrange(1, totalnumber + 101)
@@ -235,7 +250,7 @@ if __name__ == "__main__":
         
         (threading.Thread(target=client, args=(ip, port, msg))).start()
     
-    time.sleep(80)   
+    time.sleep(20)   
     server.shutdown()
     print "Server shutdown." 
 
